@@ -1,0 +1,13 @@
+# Waste Classifier — Backend Dependencies
+# Requires Python 3.11 or 3.12  (TensorFlow does NOT support Python 3.13+)
+
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# Deep Learning — TF 2.16+ includes Keras 3 natively
+tensorflow>=2.16.0,<2.20.0
+
+# Image handling
+Pillow>=10.3.0
+numpy>=1.26.0,<2.0.0

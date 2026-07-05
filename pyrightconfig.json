@@ -1,0 +1,20 @@
+{
+  "pythonVersion": "3.11",
+  "venvPath": ".",
+  "venv": "venv311",
+  "pythonPlatform": "Windows",
+  "typeCheckingMode": "basic",
+  "include": [
+    "backend",
+    "prepare_models.py"
+  ],
+  "exclude": [
+    "venv311",
+    "frontend"
+  ],
+  "extraPaths": [
+    "backend"
+  ],
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none"
+}
