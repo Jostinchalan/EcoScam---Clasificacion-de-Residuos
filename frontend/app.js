@@ -24,6 +24,46 @@ const CLASS_META = {
   trash: { emoji: '🗑️', label: 'Basura', color: '#D0D0D0', bg: '#F5F5F5' },
 };
 
+// Recycling guidance per category
+const RECYCLING_GUIDE = {
+  cardboard: {
+    type: 'Reciclaje — Papel/Cartón',
+    how: 'Aplasta y pliega las cajas; quita residuos de comida y cintas. Depositar en el contenedor azul (papel y cartón).'
+  },
+  'e-waste': {
+    type: 'Punto verde / Punto limpio',
+    how: 'No tirar en la basura común. Llevar a puntos limpios o recogidas especiales; reciclan componentes electrónicos de forma segura.'
+  },
+  glass: {
+    type: 'Reciclaje — Vidrio',
+    how: 'Enjuagar si es posible y depositar en los contenedores verdes para vidrio. No mezclar con cerámica o cristales rotos.'
+  },
+  metal: {
+    type: 'Reciclaje — Metal',
+    how: 'Limpia restos de comida y deposita en el contenedor amarillo si tu municipio lo acepta, o en puntos limpios para metales.'
+  },
+  organic: {
+    type: 'Compost / Orgánico',
+    how: 'Desechar en el contenedor marrón o compostador doméstico. Evitar bolsas de plástico; usar bolsas compostables si es necesario.'
+  },
+  paper: {
+    type: 'Reciclaje — Papel',
+    how: 'Doblar y depositar en contenedor azul para papel y cartón. Evitar papel muy sucio o encerado.'
+  },
+  plastic: {
+    type: 'Reciclaje — Plásticos',
+    how: 'Enjuagar envases; deposítalos en el contenedor amarillo o según la normativa local. Evita contaminación con restos orgánicos.'
+  },
+  textile: {
+    type: 'Ropa / Textil',
+    how: 'Lleva ropa en buen estado a puntos de recolección o tiendas de segunda mano. Ropa rota al contenedor de textil (si existe) o puntos limpios.'
+  },
+  trash: {
+    type: 'Residuos — No reciclable',
+    how: 'Depósito en contenedor de rechazo. Si contiene líquidos o peligrosos, llevar al punto limpio.'
+  }
+};
+
 const MODEL_DISPLAY = {
   cnn1: { name: 'Custom CNN', badge: 'CNN1' },
   cnn2: { name: 'MobileNetV2', badge: 'CNN2' },
@@ -55,6 +95,16 @@ const resultSection = document.getElementById('result-section');
 const errorBanner = document.getElementById('error-banner');
 const errorMsg = document.getElementById('error-msg');
 const categoriesGrid = document.querySelector('.categories-grid');
+const openHistoryBtn = document.getElementById('open-history');
+const historyModal = document.getElementById('history-modal');
+const historyListEl = document.getElementById('history-list');
+const closeHistoryBtn = document.getElementById('close-history');
+const openCameraBtn = document.getElementById('open-camera');
+const cameraCard = document.getElementById('camera-card');
+const cameraVideo = document.getElementById('camera-video');
+const btnCapture = document.getElementById('btn-capture');
+const btnCameraClose = document.getElementById('btn-camera-close');
+let mediaStream = null;
 
 // Result card refs
 const resultEmoji = document.getElementById('result-emoji');
@@ -182,6 +232,10 @@ function handleFile(file) {
 
 btnClear.addEventListener('click', clearAll);
 
+// Botón "Seleccionar foto" (fuera del upload zone)
+const btnSelectFile = document.getElementById('btn-select-file');
+if (btnSelectFile) btnSelectFile.addEventListener('click', (e) => { e.stopPropagation(); fileInput.click(); });
+
 btnClassify.addEventListener('click', () => {
   if (selectedFile) classify(selectedFile);
 });
@@ -236,6 +290,18 @@ async function classify(file) {
 
     const data = await resp.json();
     renderResult(data);
+    // Save to history
+    try {
+      const record = {
+        ts: Date.now(),
+        label: CLASS_META[data.final_label]?.label || data.final_label,
+        confidence: data.final_confidence,
+        data_url: previewImg.src || '',
+        result: data,
+      };
+      saveHistoryItem(record);
+      renderStatsChart();
+    } catch (_) { }
 
   } catch (err) {
     clearInterval(stepTimer);
@@ -247,9 +313,116 @@ async function classify(file) {
     );
   } finally {
     btnClassify.disabled = false;
-    btnClassify.innerHTML = '<span aria-hidden="true">🔍</span> Clasificar';
+    btnClassify.innerHTML = '<span aria-hidden="true"></span> Clasificar';
   }
 }
+
+// ── History storage & modal ─────────────────────────────────────────────────
+const HISTORY_KEY = 'ecoscanner_history_v1';
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function saveHistoryItem(item) {
+  try {
+    const list = loadHistory();
+    list.unshift(item);
+    if (list.length > 100) list.splice(100);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+  } catch (_) { }
+}
+
+function clearHistory() {
+  localStorage.removeItem(HISTORY_KEY);
+  renderHistoryList();
+}
+
+function renderHistoryList() {
+  if (!historyListEl) return;
+  const items = loadHistory();
+  historyListEl.innerHTML = '';
+  if (!items.length) {
+    historyListEl.innerHTML = '<p class="muted">No hay clasificaciones en el historial todavía.<br>Clasifica un residuo para que aparezca aquí.</p>';
+    return;
+  }
+  items.forEach((it, idx) => {
+    const node = document.createElement('div');
+    node.className = 'hist-item';
+    const date = new Date(it.ts).toLocaleString('es-ES', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+    const confPct = Math.round((it.confidence || 0) * 100);
+    const meta = Object.values(CLASS_META).find(m => m.label === it.label) || null;
+    const emoji = meta ? meta.emoji : '♻️';
+    const thumbSrc = it.data_url || '';
+    const thumbHtml = thumbSrc
+      ? `<img src="${thumbSrc}" alt="${it.label}" loading="lazy"/>`
+      : `<div style="width:64px;height:64px;border-radius:var(--r-sm);background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:0.75rem;color:var(--text-muted);border:1px solid var(--border);">Sin imagen</div>`;
+
+    node.innerHTML = `
+      <div class="hist-thumb">${thumbHtml}</div>
+      <div class="hist-meta">
+        <div class="hist-label">${it.label}</div>
+        <div class="hist-sub">${date}</div>
+        <div class="hist-conf-pill">${confPct}% confianza</div>
+      </div>
+      <div class="hist-actions">
+        <button class="upload-btn hist-view" style="font-size:0.78rem;padding:0.35rem 0.85rem;" data-idx="${idx}">Ver</button>
+      </div>
+    `;
+    node.querySelector('.hist-view').addEventListener('click', () => {
+      renderResult(it.result);
+      closeHistory();
+    });
+    historyListEl.appendChild(node);
+  });
+
+  // footer con botón limpiar
+  const footer = document.createElement('div');
+  footer.className = 'history-footer';
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'history-clear';
+  clearBtn.textContent = 'Limpiar todo el historial';
+  clearBtn.addEventListener('click', () => {
+    if (confirm('¿Borrar todo el historial de clasificaciones?')) clearHistory();
+  });
+  footer.appendChild(clearBtn);
+  historyListEl.appendChild(footer);
+}
+
+
+function openHistory() {
+  renderHistoryList();
+  if (!historyModal) return;
+  historyModal.setAttribute('aria-hidden', 'false');
+  historyModal.classList.add('visible');
+}
+
+function closeHistory() {
+  if (!historyModal) return;
+  historyModal.setAttribute('aria-hidden', 'true');
+  historyModal.classList.remove('visible');
+}
+
+if (openHistoryBtn) openHistoryBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openHistory(); });
+if (closeHistoryBtn) closeHistoryBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); closeHistory(); });
+// close when clicking backdrop
+const historyBackdrop = document.getElementById('history-backdrop');
+if (historyBackdrop) historyBackdrop.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); closeHistory(); });
+
+// Fallback: listen at document level in case specific listeners didn't attach
+document.addEventListener('click', (e) => {
+  const target = e.target;
+  if (!target) return;
+  if (target.id === 'open-history') {
+    e.preventDefault(); e.stopPropagation(); openHistory();
+  }
+  if (target.id === 'close-history' || target.id === 'history-backdrop') {
+    e.preventDefault(); e.stopPropagation(); closeHistory();
+  }
+});
 
 // ── Result rendering ──────────────────────────────────────────────────────────
 
@@ -278,6 +451,17 @@ function renderResult(data) {
   categoryChip.style.fontWeight = '600';
   categoryChip.style.color = 'var(--text-secondary)';
   categoryChip.innerHTML = `<span aria-hidden="true">${meta.emoji}</span> ${meta.label}`;
+
+  // Recycling recommendation block
+  const recoEl = document.getElementById('recycling-reco');
+  if (recoEl) {
+    const guide = RECYCLING_GUIDE[final_label] || RECYCLING_GUIDE.trash;
+    recoEl.innerHTML = `
+      <div class="reco-type">${guide.type}</div>
+      <div class="reco-how">${guide.how}</div>
+    `;
+    recoEl.style.display = 'block';
+  }
 
   // Arc meter
   const dashOffset = ARC_CIRCUMFERENCE * (1 - final_confidence);
@@ -322,13 +506,8 @@ function renderModelRows(perModel, mode) {
           <span class="model-id-badge">${display.badge}</span>
           <span class="model-name">${display.name}</span>
           ${!isSkipped
-        ? `<span class="model-prediction-label">
-                ${classMeta ? `<span aria-hidden="true">${classMeta.emoji}</span> ` : ''}
-                ${classMeta ? classMeta.label : pm.label}
-               </span>`
-        : `<span class="skipped-badge" aria-label="No consultado">
-                <span aria-hidden="true">–</span> no consultado
-               </span>`
+        ? `<span class="model-prediction-label">${classMeta ? classMeta.label : pm.label}</span>`
+        : `<span class="skipped-badge" aria-label="No consultado"><span aria-hidden="true">–</span> no consultado</span>`
       }
         </div>
         <span class="model-conf-value" aria-hidden="true">
@@ -358,6 +537,57 @@ function renderModelRows(perModel, mode) {
   });
 }
 
+// ── Camera helpers ──────────────────────────────────────────────────────────
+async function openCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showError('Tu navegador no soporta acceso a la cámara.');
+    return;
+  }
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    if (cameraVideo) cameraVideo.srcObject = mediaStream;
+    if (cameraCard) {
+      cameraCard.classList.add('visible');
+      cameraCard.setAttribute('aria-hidden', 'false');
+    }
+  } catch (err) {
+    showError('No se pudo acceder a la cámara: ' + err.message);
+  }
+}
+
+function closeCamera() {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(t => t.stop());
+    mediaStream = null;
+  }
+  if (cameraVideo) cameraVideo.srcObject = null;
+  if (cameraCard) {
+    cameraCard.classList.remove('visible');
+    cameraCard.setAttribute('aria-hidden', 'true');
+  }
+}
+
+if (openCameraBtn) openCameraBtn.addEventListener('click', (e) => { e.stopPropagation(); openCamera(); });
+if (btnCameraClose) btnCameraClose.addEventListener('click', closeCamera);
+if (btnCapture) btnCapture.addEventListener('click', () => {
+  if (!cameraVideo) return;
+  const w = cameraVideo.videoWidth || 1280;
+  const h = cameraVideo.videoHeight || 720;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(cameraVideo, 0, 0, w, h);
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    // show preview and automatically classify
+    showPreview(file);
+    closeCamera();
+    classify(file);
+  }, 'image/jpeg', 0.9);
+});
+
 // ── Utility: show / hide ──────────────────────────────────────────────────────
 
 function show(el) { el.classList.add('visible'); }
@@ -373,4 +603,101 @@ function showError(msg) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+let statsChartInstance = null;   // declarado aquí, antes de cualquier llamada
+
 initCategoriesLegend();
+renderStatsChart();
+
+// ── Stats chart ───────────────────────────────────────────────────────────────
+
+function renderStatsChart() {
+  const items = loadHistory();
+  const statsContent = document.getElementById('stats-content');
+  const statsEmpty = document.getElementById('stats-empty');
+  if (!statsContent || !statsEmpty) return;
+
+  if (!items.length) {
+    statsContent.style.display = 'none';
+    statsEmpty.style.display = 'block';
+    return;
+  }
+
+  statsEmpty.style.display = 'none';
+  statsContent.style.display = 'flex';
+
+  // Contar ocurrencias por categoría
+  const counts = {};
+  items.forEach(it => {
+    const lbl = it.label || '—';
+    counts[lbl] = (counts[lbl] || 0) + 1;
+  });
+
+  const labels = Object.keys(counts);
+  const data = Object.values(counts);
+  const total = items.length;
+
+  // Color por categoría
+  const bgColors = labels.map(lbl => {
+    const meta = Object.values(CLASS_META).find(m => m.label === lbl);
+    return meta ? meta.color : '#D0D0D0';
+  });
+
+  const canvas = document.getElementById('stats-chart');
+  if (!canvas) return;
+
+  // Destruir instancia anterior para evitar duplicados
+  if (statsChartInstance) {
+    statsChartInstance.destroy();
+    statsChartInstance = null;
+  }
+
+  try {
+    statsChartInstance = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data,
+          backgroundColor: bgColors,
+          borderColor: '#fff',
+          borderWidth: 3,
+          hoverOffset: 8,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        cutout: '62%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${ctx.label}: ${ctx.parsed} (${Math.round(ctx.parsed / total * 100)}%)`,
+            },
+            bodyFont: { family: 'Inter', size: 12 },
+          },
+        },
+      },
+    });
+  } catch (e) {
+    console.error('Error al renderizar gráfica:', e);
+  }
+
+  // Barras de resumen lateral
+  const summaryEl = document.getElementById('stats-summary');
+  if (summaryEl) {
+    summaryEl.innerHTML = labels
+      .map((lbl, i) => {
+        const pct = Math.round(data[i] / total * 100);
+        return `
+          <div class="stat-row">
+            <span class="stat-label" title="${lbl}">${lbl}</span>
+            <span class="stat-bar-wrap">
+              <span class="stat-bar" style="width:${pct}%;background:${bgColors[i]};"></span>
+            </span>
+            <span class="stat-count">${data[i]}</span>
+          </div>`;
+      })
+      .join('');
+  }
+}

@@ -1,4 +1,6 @@
 venv311/
+venv/
+backend/venv/
 __pycache__/
 *.pyc
 .env
