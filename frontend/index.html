@@ -5,249 +5,816 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ABF666" />
-
-  <!-- SEO -->
+  <title>EcoScan — Clasificación de Residuos con IA</title>
   <meta name="description"
-    content="Identifica el tipo de residuo en una foto usando 4 modelos de inteligencia artificial. Clasifica en 9 categorías: cartón, e-waste, vidrio, metal, orgánico, papel, plástico, textil y basura." />
-
-  <!-- Open Graph -->
+    content="Identifica el tipo de residuo en una foto usando 4 modelos de inteligencia artificial." />
   <meta property="og:title" content="EcoScan — Clasificador de Residuos con IA" />
-  <meta property="og:description" content="Sube o toma una foto de tu residuo y EcoScan lo clasifica al instante." />
   <meta property="og:type" content="website" />
 
-  <!-- Styles -->
-  <link rel="stylesheet" href="styles.css" />
+  <!-- Favicon / Logo del sistema en la pestaña del navegador -->
+  <link rel="icon" type="image/png" href="logo.png" />
+  <link rel="apple-touch-icon" href="logo.png" />
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet Routing Machine CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+  <!-- App Styles -->
+  <link rel="stylesheet" href="styles.css?v=6" />
+
+  <style>
+    /* ════════════════════════════════════════════
+       SPLASH + LOADER — Estilos críticos inline
+       (cargados antes del render para garantizar
+       que el splash bloquee todo desde el inicio)
+       ════════════════════════════════════════════ */
+
+    /* Ocultar app hasta que termine el loader */
+    #app-shell {
+      display: none;
+    }
+
+    /* ── SPLASH ── */
+    #splash-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      background: var(--bg, #F7FAF3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-family: 'Inter', system-ui, sans-serif;
+      transition: opacity .5s ease;
+    }
+
+    #splash-overlay.spl-fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Decoración de fondo */
+    #splash-overlay::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 10% 20%, rgba(171, 246, 102, .18) 0%, transparent 55%),
+        radial-gradient(ellipse at 90% 80%, rgba(142, 217, 79, .12) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(171, 246, 102, .06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Orbes decorativos */
+    .spl-orb {
+      position: absolute;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(171, 246, 102, .22) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Tarjeta central */
+    .spl-card {
+      position: relative;
+      z-index: 1;
+      background: #fff;
+      border: 1.5px solid #E4EDD8;
+      border-radius: 24px;
+      box-shadow:
+        0 20px 60px rgba(30, 42, 20, .1),
+        0 4px 20px rgba(30, 42, 20, .06),
+        0 0 0 1px rgba(171, 246, 102, .12);
+      padding: 2.8rem 2.5rem 2.4rem;
+      max-width: 480px;
+      width: calc(100% - 2rem);
+      text-align: center;
+      animation: spl-card-in .7s cubic-bezier(.22, .68, 0, 1.2) both;
+    }
+
+    @keyframes spl-card-in {
+      from {
+        opacity: 0;
+        transform: translateY(24px) scale(.96);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .spl-logo {
+      width: clamp(110px, 28vw, 170px);
+      margin: 0 auto 1.5rem;
+      animation: spl-logo-float 3s ease-in-out infinite;
+      filter: drop-shadow(0 6px 16px rgba(171, 246, 102, .35));
+    }
+
+    @keyframes spl-logo-float {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-8px);
+      }
+    }
+
+    .spl-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      background: #EDFFD4;
+      border: 1px solid #C8DCAA;
+      border-radius: 999px;
+      color: #5A6B46;
+      font-size: .73rem;
+      font-weight: 600;
+      padding: .28rem .9rem;
+      margin-bottom: 1rem;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .spl-title {
+      font-size: clamp(2rem, 7vw, 3rem);
+      font-weight: 800;
+      color: #1E2A14;
+      line-height: 1.1;
+      margin-bottom: .3rem;
+      letter-spacing: -.03em;
+    }
+
+    .spl-title span {
+      background: linear-gradient(135deg, #5A6B46 0%, #ABF666 60%, #8ED94F 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .spl-subtitle {
+      font-size: .88rem;
+      color: #8DA07A;
+      font-weight: 500;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      margin-bottom: 1.2rem;
+    }
+
+    .spl-divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #E4EDD8, transparent);
+      margin: 1.2rem 0;
+    }
+
+    .spl-features {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .6rem;
+      margin-bottom: 1.6rem;
+      text-align: left;
+    }
+
+    .spl-feat {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      background: #F7FAF3;
+      border: 1px solid #E4EDD8;
+      border-radius: 10px;
+      padding: .55rem .75rem;
+      font-size: .78rem;
+      font-weight: 500;
+      color: #5A6B46;
+    }
+
+    .spl-feat-icon {
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+
+    .spl-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .65rem;
+      width: 100%;
+      padding: .95rem 1.5rem;
+      background: linear-gradient(135deg, #ABF666 0%, #8ED94F 100%);
+      color: #0d1f07;
+      border: none;
+      border-radius: 14px;
+      font-size: 1rem;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(171, 246, 102, .4), 0 2px 6px rgba(0, 0, 0, .1);
+      transition: transform .18s ease, box-shadow .18s ease;
+      letter-spacing: .01em;
+      font-family: 'Inter', system-ui, sans-serif;
+      margin-bottom: .9rem;
+    }
+
+    .spl-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(171, 246, 102, .5), 0 4px 10px rgba(0, 0, 0, .12);
+    }
+
+    .spl-btn:active {
+      transform: translateY(0) scale(.98);
+    }
+
+    .spl-btn-arrow {
+      font-size: .95rem;
+      transition: transform .18s ease;
+    }
+
+    .spl-btn:hover .spl-btn-arrow {
+      transform: translateX(4px);
+    }
+
+    .spl-footnote {
+      font-size: .72rem;
+      color: #8DA07A;
+      letter-spacing: .04em;
+    }
+
+    .spl-footnote span {
+      margin: 0 .35rem;
+      opacity: .5;
+    }
+
+    /* ── TRANSITION LOADER ── */
+    #transition-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 99998;
+      background: var(--bg, #F7FAF3);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Inter', system-ui, sans-serif;
+      overflow: hidden;
+      transition: opacity .4s ease;
+    }
+
+    #transition-loader::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 20% 30%, rgba(171, 246, 102, .15) 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 70%, rgba(142, 217, 79, .1) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    #transition-loader.tl-show {
+      display: flex;
+      opacity: 1;
+    }
+
+    #transition-loader.tl-fade {
+      opacity: 0;
+    }
+
+    .tl-card {
+      position: relative;
+      z-index: 1;
+      background: #fff;
+      border: 1.5px solid #E4EDD8;
+      border-radius: 20px;
+      box-shadow: 0 16px 48px rgba(30, 42, 20, .1), 0 4px 16px rgba(30, 42, 20, .06);
+      padding: 2.5rem 2.2rem;
+      max-width: 340px;
+      width: calc(100% - 2rem);
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.1rem;
+    }
+
+    .tl-logo {
+      width: 80px;
+      filter: drop-shadow(0 4px 14px rgba(171, 246, 102, .4));
+      animation: tl-pulse 1.2s ease-in-out infinite alternate;
+    }
+
+    @keyframes tl-pulse {
+      from {
+        transform: scale(.93);
+      }
+
+      to {
+        transform: scale(1.07);
+      }
+    }
+
+    .tl-rings-wrap {
+      position: relative;
+      width: 54px;
+      height: 54px;
+    }
+
+    .tl-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      border-top-color: #ABF666;
+      animation: tl-spin 1s linear infinite;
+    }
+
+    .tl-ring-inner {
+      inset: 9px;
+      border-top-color: #C8DCAA;
+      animation: tl-spin 1.7s linear infinite reverse;
+    }
+
+    @keyframes tl-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .tl-label {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #1E2A14;
+    }
+
+    .tl-bar-track {
+      width: 200px;
+      height: 5px;
+      background: #E4EDD8;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    #tl-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #ABF666, #8ED94F);
+      border-radius: 999px;
+      transition: width .12s linear;
+      box-shadow: 0 0 8px rgba(171, 246, 102, .5);
+    }
+
+    .tl-step {
+      font-size: .76rem;
+      color: #8DA07A;
+      font-weight: 500;
+      letter-spacing: .04em;
+      min-height: 1.1em;
+    }
+
+    /* Responsive */
+    @media (max-width: 480px) {
+      .spl-card {
+        padding: 2rem 1.4rem 1.8rem;
+      }
+
+      .spl-features {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 
 <body>
 
-  <!-- ═══════════════════════════════ HEADER ═══════════════════════════════ -->
-  <header class="app-header" role="banner">
-    <div class="container">
-      <div class="header-inner">
+  <!-- ══════════════════════════════════════════════
+       SPLASH — Pantalla de Bienvenida Rediseñada
+       (bloqueada encima de todo con z-index: 99999)
+       ══════════════════════════════════════════════ -->
+  <div id="splash-overlay" role="dialog" aria-modal="true" aria-label="Bienvenida a EcoScan">
+
+    <!-- Orbes decorativos de fondo -->
+    <div class="spl-orb" style="width:350px;height:350px;top:-80px;left:-100px;"></div>
+    <div class="spl-orb" style="width:250px;height:250px;bottom:-60px;right:-60px;"></div>
+
+    <!-- Tarjeta principal -->
+    <div class="spl-card">
+
+      <!-- Logo -->
+      <img src="logo.png" alt="EcoScan Logo" class="spl-logo" />
+
+      <!-- Badge -->
+      <div class="spl-badge">
+        IA · 4 modelos CNN en ensamble
       </div>
+
+      <!-- Título -->
+      <h1 class="spl-title">Eco<span>Scan</span></h1>
+      <p class="spl-subtitle">Clasificación Inteligente de Residuos</p>
+
+      <div class="spl-divider"></div>
+
+      <!-- Características -->
+      <div class="spl-features">
+        <div class="spl-feat">
+          <span class="spl-feat-icon"></span>
+          <span>Clasifica por imagen</span>
+        </div>
+        <div class="spl-feat">
+          <span class="spl-feat-icon"></span>
+          <span>Resultado en segundos</span>
+        </div>
+        <div class="spl-feat">
+          <span class="spl-feat-icon"></span>
+          <span>9 categorías</span>
+        </div>
+        <div class="spl-feat">
+          <span class="spl-feat-icon"></span>
+          <span>Reciclaje cercano</span>
+        </div>
+      </div>
+
+      <!-- Botón principal -->
+      <button id="splash-btn" class="spl-btn" type="button">
+        Iniciar Clasificación
+        <span class="spl-btn-arrow">→</span>
+      </button>
+
+      <!-- Pie -->
+      <p class="spl-footnote">
+        Sin registro <span>·</span> Sin costo <span>·</span> 100% privado
+      </p>
     </div>
-  </header>
+  </div>
 
-  <!-- ═══════════════════════════════ MAIN ═══════════════════════════════ -->
-  <main class="main-content" id="main" role="main">
-    <div class="container">
-
-      <!-- Intro -->
-      <section class="intro" aria-labelledby="intro-heading">
-        <!-- Logo principal centrado -->
-        <div class="intro-logo-wrap">
-          <img src="logo.png" alt="EcoScan" class="intro-logo-img" />
-        </div>
-        <div class="intro-badge" aria-label="Tecnología de inteligencia artificial">
-          IA con 4 modelos CNN en ensamble
-        </div>
-        <h2 id="intro-heading">
-          Clasifica tu residuo<br /><span>en segundos</span>
-        </h2>
-        <p>Sube una foto o usa la cámara de tu celular. Los 4 modelos analizan la imagen en paralelo y te muestran la
-          predicción final junto con el desglose por modelo.</p>
-      </section>
-
-      <!-- Upload zone (solo drag-and-drop y clic directo) -->
-      <section aria-label="Zona de carga de imagen">
-        <div class="upload-card" id="upload-zone" role="button" tabindex="0"
-          aria-label="Arrastra una imagen aquí para clasificarla" aria-describedby="upload-hint">
-          <input type="file" id="file-input" accept="image/*" aria-label="Seleccionar imagen desde galería" />
-          <span class="upload-icon" aria-hidden="true"></span>
-          <p class="upload-title">Arrastra tu imagen aquí</p>
-          <p class="upload-hint" id="upload-hint">JPEG, PNG, WebP · máximo 20 MB</p>
-        </div>
-
-        <!-- Botones de acción fuera del upload zone -->
-        <div class="upload-actions">
-          <button id="btn-select-file" class="upload-btn" type="button">Seleccionar foto</button>
-          <button id="open-camera" class="upload-btn" type="button"
-            style="background:var(--surface-2);color:var(--text-secondary);border:1.5px solid var(--border);">Usar
-            cámara</button>
-          <button id="open-history" class="upload-btn" type="button"
-            style="background:var(--surface-2);color:var(--text-secondary);border:1.5px solid var(--border);">Historial</button>
-        </div>
-
-        <!-- Camera area (hidden until requested) -->
-        <div class="camera-card" id="camera-card" aria-hidden="true">
-          <video id="camera-video" autoplay playsinline></video>
-          <div class="camera-actions">
-            <button id="btn-capture" class="upload-btn" type="button">Tomar foto</button>
-            <button id="btn-camera-close" class="btn-clear" type="button">Cerrar</button>
-          </div>
-        </div>
-
-        <!-- Mode toggle -->
-        <div class="mode-toggle-wrap" role="group" aria-label="Modo de predicción">
-          <span class="mode-label">Modo:</span>
-          <div class="toggle-group">
-            <button class="toggle-btn active" id="btn-ensemble" type="button" aria-pressed="true"
-              aria-label="Modo ensamble: promedio de los 4 modelos" data-mode="ensemble">Ensamble</button>
-            <button class="toggle-btn" id="btn-cascade" type="button" aria-pressed="false"
-              aria-label="Modo cascada: escala al siguiente modelo si la confianza es baja"
-              data-mode="cascade">Cascada</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- Preview strip (hidden until image selected) -->
-      <section class="preview-section" id="preview-section" aria-label="Vista previa de imagen seleccionada"
-        aria-live="polite">
-        <div class="preview-inner">
-          <div class="preview-img-wrap">
-            <img class="preview-img" id="preview-img" src="" alt="Vista previa de la imagen seleccionada" />
-          </div>
-          <div class="preview-info">
-            <p class="preview-filename" id="preview-filename"></p>
-            <p class="preview-filesize" id="preview-filesize"></p>
-          </div>
-          <div class="preview-actions">
-            <button class="btn-classify" id="btn-classify" type="button"
-              aria-label="Enviar imagen a los modelos CNN para clasificar">
-              <span></span> Clasificar
-            </button>
-            <button class="btn-clear" id="btn-clear" type="button" aria-label="Limpiar selección y volver al inicio">
-              <span></span> Limpiar
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <!-- Loading state (hidden until request starts) -->
-      <section class="loading-section" id="loading-section" aria-live="polite" aria-label="Procesando imagen"
-        aria-busy="true" role="status">
-        <div class="loader-ring" aria-hidden="true"></div>
-        <p class="loading-title">Analizando imagen…</p>
-        <p class="loading-sub" id="loading-mode-text">Ensamble de 4 modelos CNN</p>
-        <div class="model-steps" id="model-steps" aria-hidden="true">
-          <div class="model-step" id="step-cnn1">
-            <span class="step-dot"></span> CNN1
-          </div>
-          <div class="model-step" id="step-cnn2">
-            <span class="step-dot"></span> CNN2
-          </div>
-          <div class="model-step" id="step-cnn3">
-            <span class="step-dot"></span> CNN3
-          </div>
-          <div class="model-step" id="step-cnn4">
-            <span class="step-dot"></span> CNN4
-          </div>
-        </div>
-      </section>
-
-      <!-- Error banner (hidden until error) -->
-      <div class="error-banner" id="error-banner" role="alert" aria-live="assertive">
-        <span class="error-icon" aria-hidden="true"></span>
-        <div>
-          <p class="error-title">Error al clasificar</p>
-          <p class="error-msg" id="error-msg"></p>
-        </div>
+  <!-- ══════════════════════════════════════════════
+       TRANSITION LOADER — 3 segundos
+       ══════════════════════════════════════════════ -->
+  <div id="transition-loader" role="status" aria-label="Cargando EcoScan">
+    <div class="tl-card">
+      <img src="logo.png" alt="" class="tl-logo" aria-hidden="true" />
+      <div class="tl-rings-wrap" aria-hidden="true">
+        <div class="tl-ring"></div>
+        <div class="tl-ring tl-ring-inner"></div>
       </div>
-
-      <!-- Result section (hidden until prediction done) -->
-      <section class="result-section" id="result-section" aria-label="Resultado de clasificación" aria-live="polite">
-        <!-- Main result card -->
-        <div class="result-main-card" id="result-main-card">
-          <div class="result-header">
-
-            <span class="result-emoji" id="result-emoji" aria-hidden="true"></span>
-
-            <div class="result-text">
-              <div class="result-mode-badge" id="result-mode-badge">
-                <span aria-hidden="true"></span>
-                <span id="result-mode-text">Ensamble</span>
-              </div>
-              <p class="result-label" id="result-label">—</p>
-
-              <div class="result-confidence-pill" aria-label="Confianza del modelo">
-                <span class="confidence-label">Confianza</span>
-                <span class="confidence-value" id="result-confidence">0%</span>
-              </div>
-
-              <div id="category-chip" class="category-chip"></div>
-            </div>
-
-            <!-- Arc confidence meter -->
-            <div class="confidence-arc-wrap" aria-hidden="true">
-              <svg class="arc-svg" width="100" height="100" viewBox="0 0 100 100" role="img"
-                aria-label="Medidor de confianza circular">
-                <circle class="arc-track" cx="50" cy="50" r="35" />
-                <circle class="arc-fill" id="arc-fill" cx="50" cy="50" r="35" />
-                <text class="arc-text" id="arc-text" x="50" y="47">0%</text>
-                <text class="arc-sub" x="50" y="60">confianza</text>
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        <!-- Per-model comparison -->
-        <div class="comparison-card" aria-label="Comparación de predicciones por modelo">
-          <p class="comparison-title">Desglose por modelo</p>
-          <!-- Recomendación de reciclaje (populada por JS) -->
-          <div id="recycling-reco" class="recycling-reco" style="display:none; margin-bottom:var(--space-lg);"></div>
-          <div class="model-rows" id="model-rows" role="list">
-            <!-- Populated by JS -->
-          </div>
-        </div>
-      </section>
-
-      <!-- Categories legend -->
-      <section class="categories-section" aria-labelledby="cat-title">
-        <p class="section-title" id="cat-title">Categorías detectables</p>
-        <div class="categories-grid" role="list" aria-label="Lista de categorías de residuos">
-          <!-- Populated by JS -->
-        </div>
-      </section>
-
-      <!-- Estadísticas del historial -->
-      <section class="stats-section" id="stats-section" aria-labelledby="stats-title">
-        <p class="section-title" id="stats-title">Estadísticas del historial</p>
-        <div class="stats-card">
-          <div class="stats-empty" id="stats-empty">
-            <p>Clasifica residuos para ver las estadísticas aquí.</p>
-          </div>
-          <div class="stats-content" id="stats-content" style="display:none;">
-            <div class="chart-wrap">
-              <canvas id="stats-chart"></canvas>
-            </div>
-            <div class="stats-summary" id="stats-summary"></div>
-          </div>
-        </div>
-      </section>
-
-    </div><!-- /.container -->
-  </main>
-
-  <!-- Historial modal -->
-  <div id="history-modal" class="modal" aria-hidden="true" role="dialog" aria-label="Historial de clasificaciones">
-    <div class="modal-backdrop" id="history-backdrop"></div>
-    <div class="modal-panel" role="document">
-      <div class="modal-header">
-        <h3>Historial de clasificaciones</h3>
-        <button id="close-history" class="btn-clear" aria-label="Cerrar historial">✕</button>
+      <p class="tl-label">Cargando EcoScan…</p>
+      <div class="tl-bar-track" aria-hidden="true">
+        <div id="tl-bar"></div>
       </div>
-      <div class="modal-body">
-        <div id="history-list" class="history-list">
-          <!-- populated by JS -->
+      <p class="tl-step" id="tl-msg">Iniciando modelos de IA…</p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       MODAL MAPA — Puntos de reciclaje cercanos
+       ══════════════════════════════════════════════ -->
+  <div id="map-modal" class="modal map-modal" aria-hidden="true" role="dialog" aria-modal="true"
+    aria-label="Puntos de reciclaje cercanos">
+    <div class="modal-backdrop" id="map-backdrop"></div>
+    <div class="modal-panel map-modal-panel" role="document">
+      <div class="modal-header map-modal-header">
+        <div class="map-modal-title-wrap">
+          <span class="map-modal-icon" aria-hidden="true">📍</span>
+          <div>
+            <h3>Puntos de Reciclaje Cercanos</h3>
+            <p class="map-modal-sub">Basado en tu ubicación · OpenStreetMap · Gratis</p>
+          </div>
+        </div>
+        <button id="close-map-modal" class="btn-clear map-close-btn" aria-label="Cerrar mapa">✕</button>
+      </div>
+      <div class="map-status-bar" id="map-status-bar">
+        <span class="map-status-dot" id="map-status-dot"></span>
+        <span id="map-status-text">Obteniendo tu ubicación…</span>
+      </div>
+      <div class="map-container-wrap">
+        <div id="recycling-map" class="recycling-map" aria-label="Mapa de puntos de reciclaje"></div>
+      </div>
+      <div class="map-legend" aria-label="Leyenda del mapa">
+        <div class="map-legend-item">
+          <span class="legend-dot legend-dot--green"></span>
+          <span>Punto de reciclaje (OSM)</span>
+        </div>
+        <div class="map-legend-item">
+          <span class="legend-dot legend-dot--blue"></span>
+          <span>Tu ubicación</span>
+        </div>
+        <div class="map-legend-item legend-powered">
+          <span>🗺️ OpenStreetMap · Overpass API · Sin costo</span>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ═══════════════════════════════ FOOTER ═══════════════════════════════ -->
-  <footer class="app-footer" role="contentinfo">
-    <div class="container">
-      <p class="footer-text">
-        <strong>EcoScan</strong> · 4 modelos CNN ·
-        <span aria-hidden="true"></span> Clasificación de residuos con IA
-      </p>
-    </div>
-  </footer>
+  <!-- ══════════════════════════════════════════════
+       APP SHELL — Contenido principal de la app
+       (oculto hasta que el loader termine)
+       ══════════════════════════════════════════════ -->
+  <div id="app-shell">
 
-  <!-- ═══════════════════════════════ JS ═══════════════════════════════ -->
+    <header class="app-header" role="banner">
+      <div class="container">
+        <div class="header-inner"></div>
+      </div>
+    </header>
+
+    <main class="main-content" id="main" role="main">
+      <div class="container">
+
+        <!-- Intro -->
+        <section class="intro" aria-labelledby="intro-heading">
+          <div class="intro-logo-wrap">
+            <img src="logo.png" alt="EcoScan" class="intro-logo-img" />
+          </div>
+          <div class="intro-badge" aria-label="Tecnología de inteligencia artificial">
+            IA con 4 modelos CNN en ensamble
+          </div>
+          <h2 id="intro-heading">
+            Clasifica tu residuo<br /><span>en segundos</span>
+          </h2>
+          <p>Sube una foto o usa la cámara de tu celular para la clasificación de sus residuos</p>
+        </section>
+
+        <!-- Upload zone -->
+        <section aria-label="Zona de carga de imagen">
+          <div class="upload-card" id="upload-zone" role="button" tabindex="0"
+            aria-label="Arrastra una imagen aquí para clasificarla" aria-describedby="upload-hint">
+            <input type="file" id="file-input" accept="image/*" aria-label="Seleccionar imagen desde galería" />
+            <span class="upload-icon" aria-hidden="true"></span>
+            <p class="upload-title">Arrastra tu imagen aquí</p>
+            <p class="upload-hint" id="upload-hint">JPEG, PNG, WebP · máximo 20 MB</p>
+          </div>
+
+          <div class="upload-actions">
+            <button id="btn-select-file" class="upload-btn" type="button">Seleccionar foto</button>
+            <button id="open-camera" class="upload-btn" type="button"
+              style="background:var(--surface-2);color:var(--text-secondary);border:1.5px solid var(--border);">Usar
+              cámara</button>
+            <button id="open-history" class="upload-btn" type="button"
+              style="background:var(--surface-2);color:var(--text-secondary);border:1.5px solid var(--border);">Historial</button>
+          </div>
+
+          <div class="camera-card" id="camera-card" aria-hidden="true">
+            <video id="camera-video" autoplay playsinline></video>
+            <div class="camera-actions">
+              <button id="btn-capture" class="upload-btn" type="button">Tomar foto</button>
+              <button id="btn-camera-close" class="btn-clear" type="button">Cerrar</button>
+            </div>
+          </div>
+
+          <div class="mode-toggle-wrap" role="group" aria-label="Modo de predicción">
+            <span class="mode-label">Modo:</span>
+            <div class="toggle-group">
+              <button class="toggle-btn active" id="btn-ensemble" type="button" aria-pressed="true"
+                aria-label="Modo ensamble: promedio de los 4 modelos" data-mode="ensemble">Ensamble</button>
+              <button class="toggle-btn" id="btn-cascade" type="button" aria-pressed="false"
+                aria-label="Modo cascada: escala al siguiente modelo si la confianza es baja"
+                data-mode="cascade">Cascada</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Preview -->
+        <section class="preview-section" id="preview-section" aria-label="Vista previa de imagen seleccionada"
+          aria-live="polite">
+          <div class="preview-inner">
+            <div class="preview-img-wrap">
+              <img class="preview-img" id="preview-img" src="" alt="Vista previa de la imagen seleccionada" />
+            </div>
+            <div class="preview-info">
+              <p class="preview-filename" id="preview-filename"></p>
+              <p class="preview-filesize" id="preview-filesize"></p>
+            </div>
+            <div class="preview-actions">
+              <button class="btn-classify" id="btn-classify" type="button"
+                aria-label="Enviar imagen a los modelos CNN para clasificar">
+                <span></span> Clasificar
+              </button>
+              <button class="btn-clear" id="btn-clear" type="button" aria-label="Limpiar selección y volver al inicio">
+                <span></span> Limpiar
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Loading state -->
+        <section class="loading-section" id="loading-section" aria-live="polite" aria-label="Procesando imagen"
+          aria-busy="true" role="status">
+          <div class="loader-ring" aria-hidden="true"></div>
+          <p class="loading-title">Analizando imagen…</p>
+          <p class="loading-sub" id="loading-mode-text">Ensamble de 4 modelos CNN</p>
+          <div class="model-steps" id="model-steps" aria-hidden="true">
+            <div class="model-step" id="step-cnn1"><span class="step-dot"></span> CNN1</div>
+            <div class="model-step" id="step-cnn2"><span class="step-dot"></span> CNN2</div>
+            <div class="model-step" id="step-cnn3"><span class="step-dot"></span> CNN3</div>
+            <div class="model-step" id="step-cnn4"><span class="step-dot"></span> CNN4</div>
+          </div>
+        </section>
+
+        <!-- Error banner -->
+        <div class="error-banner" id="error-banner" role="alert" aria-live="assertive">
+          <span class="error-icon" aria-hidden="true"></span>
+          <div>
+            <p class="error-title">Error al clasificar</p>
+            <p class="error-msg" id="error-msg"></p>
+          </div>
+        </div>
+
+        <!-- Result section -->
+        <section class="result-section" id="result-section" aria-label="Resultado de clasificación" aria-live="polite">
+          <div class="result-main-card" id="result-main-card">
+            <div class="result-header">
+              <span class="result-emoji" id="result-emoji" aria-hidden="true"></span>
+              <div class="result-text">
+                <div class="result-mode-badge" id="result-mode-badge">
+                  <span aria-hidden="true"></span>
+                  <span id="result-mode-text">Ensamble</span>
+                </div>
+                <p class="result-label" id="result-label">—</p>
+                <div class="result-confidence-pill" aria-label="Confianza del modelo">
+                  <span class="confidence-label">Confianza</span>
+                  <span class="confidence-value" id="result-confidence">0%</span>
+                </div>
+                <div id="category-chip" class="category-chip"></div>
+              </div>
+              <div class="confidence-arc-wrap" aria-hidden="true">
+                <svg class="arc-svg" width="100" height="100" viewBox="0 0 100 100" role="img"
+                  aria-label="Medidor de confianza circular">
+                  <circle class="arc-track" cx="50" cy="50" r="35" />
+                  <circle class="arc-fill" id="arc-fill" cx="50" cy="50" r="35" />
+                  <text class="arc-text" id="arc-text" x="50" y="47">0%</text>
+                  <text class="arc-sub" x="50" y="60">confianza</text>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="comparison-card" aria-label="Comparación de predicciones por modelo">
+            <p class="comparison-title">Desglose por modelo</p>
+
+            <!-- Recomendación de reciclaje -->
+            <div id="recycling-reco" class="recycling-reco" style="display:none; margin-bottom:var(--space-lg);"></div>
+
+            <!-- BOTÓN LUGARES PARA RECICLAR -->
+            <div id="recycle-map-btn-wrap" style="display:none; margin-bottom:var(--space-lg);">
+              <button id="btn-open-map" class="btn-recycle-map" type="button"
+                aria-label="Ver puntos de reciclaje cercanos en el mapa">
+                <span style="font-size:1.7rem;flex-shrink:0;line-height:1;">📍</span>
+                <span style="flex:1;display:flex;flex-direction:column;gap:.15rem;text-align:left;">
+                  <strong style="font-size:.94rem;font-weight:700;color:#1E2A14;">Lugares para Reciclar</strong>
+                  <small style="font-size:.77rem;color:#5A6B46;font-weight:400;">Ver puntos de reciclaje cerca de
+                    ti</small>
+                </span>
+                <span style="font-size:1rem;color:#8DA07A;flex-shrink:0;transition:transform .18s ease;">→</span>
+              </button>
+            </div>
+
+            <div class="model-rows" id="model-rows" role="list">
+              <!-- Populated by JS -->
+            </div>
+
+            <!-- MENSAJE DE MODELO ÓPTIMO -->
+            <div id="optimal-model-msg"
+              style="display:none; margin-top:1.5rem; padding:12px 16px; background:linear-gradient(135deg, #f0ffe8 0%, #e8fff0 100%); border:1px solid #ABF666; border-radius:var(--r-md); font-size:0.95rem; color:#1E2A14; display:flex; align-items:flex-start; gap:8px;">
+              <span style="font-size:1.2rem; line-height:1;"></span>
+              <div>
+                <strong style="display:block; color:#16a34a; margin-bottom:2px;">Modelo más óptimo</strong>
+                <span id="optimal-model-text"></span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Categories legend -->
+        <section class="categories-section" aria-labelledby="cat-title">
+          <p class="section-title" id="cat-title">Categorías detectables</p>
+          <div class="categories-grid" role="list" aria-label="Lista de categorías de residuos">
+            <!-- Populated by JS -->
+          </div>
+        </section>
+
+        <!-- Estadísticas del historial -->
+        <section class="stats-section" id="stats-section" aria-labelledby="stats-title">
+          <p class="section-title" id="stats-title">Estadísticas del historial</p>
+          <div class="stats-card">
+            <div class="stats-empty" id="stats-empty">
+              <p>Clasifica residuos para ver las estadísticas aquí.</p>
+            </div>
+            <div class="stats-content" id="stats-content" style="display:none;">
+              <div class="chart-wrap">
+                <canvas id="stats-chart"></canvas>
+              </div>
+              <div class="stats-summary" id="stats-summary"></div>
+            </div>
+          </div>
+        </section>
+
+      </div><!-- /.container -->
+    </main>
+
+    <!-- Historial modal -->
+    <div id="history-modal" class="modal" aria-hidden="true" role="dialog" aria-label="Historial de clasificaciones">
+      <div class="modal-backdrop" id="history-backdrop"></div>
+      <div class="modal-panel" role="document">
+        <div class="modal-header">
+          <h3>Historial de clasificaciones</h3>
+          <button id="close-history" class="btn-clear" aria-label="Cerrar historial">✕</button>
+        </div>
+        <div class="modal-body">
+          <div id="history-list" class="history-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="app-footer" role="contentinfo">
+      <div class="container">
+        <p class="footer-text">
+          <strong>EcoScan</strong> · 4 modelos CNN ·
+          <span aria-hidden="true"></span> Clasificación de residuos con IA
+        </p>
+      </div>
+    </footer>
+
+  </div><!-- /#app-shell -->
+
+  <!-- ══ SCRIPTS ══ -->
   <script src="chart.umd.min.js"></script>
-  <script src="app.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+
+  <!-- ══ SPLASH + LOADER — Script autónomo, independiente de app.js ══ -->
+  <script>
+    (function () {
+      'use strict';
+
+      var splash = document.getElementById('splash-overlay');
+      var loader = document.getElementById('transition-loader');
+      var bar = document.getElementById('tl-bar');
+      var msg = document.getElementById('tl-msg');
+      var appShell = document.getElementById('app-shell');
+      var btn = document.getElementById('splash-btn');
+
+      if (!splash || !loader || !appShell || !btn) {
+        // Si algo falla, mostrar la app de todas formas
+        if (appShell) appShell.style.display = 'block';
+        return;
+      }
+
+      var STEPS = [
+        'Iniciando modelos de IA…',
+        'Cargando CNN1 — Custom CNN…',
+        'Cargando CNN2 — MobileNetV2…',
+        'Cargando CNN3 — EfficientNetB0…',
+        'Cargando CNN4 — ResNet50V2…',
+        '¡Listo! Bienvenido a EcoScan 🌿',
+      ];
+
+      btn.addEventListener('click', function () {
+
+        // 1. Fade out splash
+        splash.classList.add('spl-fade-out');
+
+        setTimeout(function () {
+          // 2. Ocultar splash, mostrar loader
+          splash.style.display = 'none';
+          loader.classList.add('tl-show');
+          if (msg) msg.textContent = STEPS[0];
+
+          var pct = 0;
+          var stepIdx = 0;
+          var TICKS = 30;   // 30 × 100ms = 3 segundos
+
+          var iv = setInterval(function () {
+            pct += 100 / TICKS;
+            var clamped = Math.min(pct, 100);
+
+            if (bar) bar.style.width = clamped + '%';
+
+            var newIdx = Math.min(Math.floor(clamped / 17), STEPS.length - 1);
+            if (newIdx !== stepIdx) {
+              stepIdx = newIdx;
+              if (msg) msg.textContent = STEPS[stepIdx];
+            }
+
+            if (clamped >= 100) {
+              clearInterval(iv);
+
+              // 3. Fade out loader y revelar app
+              setTimeout(function () {
+                loader.classList.add('tl-fade');
+                setTimeout(function () {
+                  loader.style.display = 'none';
+                  appShell.style.display = 'block';
+                  // Scroll al inicio
+                  window.scrollTo(0, 0);
+                }, 420);
+              }, 300);
+            }
+          }, 100);
+
+        }, 400);
+      });
+    })();
+  </script>
+
+  <!-- ══ APP.JS — Cargado después del splash script ══ -->
+  <script src="app.js?v=7"></script>
 </body>
 
 </html>

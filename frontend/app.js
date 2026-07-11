@@ -1,7 +1,8 @@
 /**
  * app.js — EcoScan Waste Classifier
- * Handles: file selection, drag-and-drop, preview, API call,
- *          result rendering (ensemble + cascade), model comparison bars.
+ * Handles: splash screen, transition loader, file selection, drag-and-drop,
+ *          preview, API call, result rendering (ensemble + cascade),
+ *          model comparison bars, recycling map (Leaflet + OpenStreetMap).
  */
 
 'use strict';
@@ -10,6 +11,7 @@
 
 const API_URL = '/predict';
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+
 
 /** Must match CLASS_LABELS in backend/app/schemas.py */
 const CLASS_META = {
@@ -104,6 +106,8 @@ const cameraCard = document.getElementById('camera-card');
 const cameraVideo = document.getElementById('camera-video');
 const btnCapture = document.getElementById('btn-capture');
 const btnCameraClose = document.getElementById('btn-camera-close');
+const recycleMmapBtnWrap = document.getElementById('recycle-map-btn-wrap');
+const btnOpenMap = document.getElementById('btn-open-map');
 let mediaStream = null;
 
 // Result card refs
@@ -116,6 +120,283 @@ const categoryChip = document.getElementById('category-chip');
 const arcFill = document.getElementById('arc-fill');
 const arcText = document.getElementById('arc-text');
 const modelRows = document.getElementById('model-rows');
+
+// ── Map Modal Logic (Leaflet + OpenStreetMap + Overpass API + Routing) ────────
+
+let leafletMap = null;
+let leafletMapInitialized = false;
+let currentRouteControl = null;
+
+// Tracking state
+let userMarker = null;
+let userCircle = null;
+let userWatchId = null;
+
+// Función para trazar la ruta en el mismo mapa
+window.drawRoute = function (startLat, startLng, endLat, endLng) {
+  if (!leafletMap) return;
+
+  if (currentRouteControl) {
+    leafletMap.removeControl(currentRouteControl);
+  }
+
+  setMapStatus('Calculando la mejor ruta...', 'loading');
+  leafletMap.closePopup();
+
+  currentRouteControl = L.Routing.control({
+    waypoints: [
+      L.latLng(startLat, startLng),
+      L.latLng(endLat, endLng)
+    ],
+    routeWhileDragging: false,
+    show: true, // MOSTRAR el panel de instrucciones paso a paso
+    collapsible: true, // Permitir colapsarlo
+    addWaypoints: false,
+    fitSelectedRoutes: true,
+    lineOptions: {
+      styles: [{ color: '#3b82f6', opacity: 0.8, weight: 6 }]
+    },
+    createMarker: function () { return null; } // No añadir más marcadores
+  }).on('routesfound', function (e) {
+    const route = e.routes[0];
+    const distanceKm = (route.summary.totalDistance / 1000).toFixed(1);
+    const timeMin = Math.round(route.summary.totalTime / 60);
+    setMapStatus(`📍 Ruta lista: ${distanceKm} km (aprox. ${timeMin} min)`, 'success');
+  }).on('routingerror', function () {
+    setMapStatus('Error al calcular la ruta.', 'error');
+  }).addTo(leafletMap);
+};
+
+function openMapModal() {
+  const mapModal = document.getElementById('map-modal');
+  if (!mapModal) return;
+  mapModal.setAttribute('aria-hidden', 'false');
+  mapModal.classList.add('visible');
+
+  // Only initialize once
+  if (!leafletMapInitialized) {
+    leafletMapInitialized = true;
+    initLeafletMap();
+  } else if (leafletMap) {
+    // Force a size recalculation if map was hidden
+    setTimeout(() => leafletMap.invalidateSize(), 200);
+  }
+}
+
+function closeMapModal() {
+  const mapModal = document.getElementById('map-modal');
+  if (!mapModal) return;
+  mapModal.setAttribute('aria-hidden', 'true');
+  mapModal.classList.remove('visible');
+}
+
+function setMapStatus(text, state) {
+  const dot = document.getElementById('map-status-dot');
+  const statusText = document.getElementById('map-status-text');
+  if (statusText) statusText.textContent = text;
+  if (dot) {
+    dot.className = 'map-status-dot';
+    if (state) dot.classList.add('dot-' + state);
+  }
+}
+
+function initLeafletMap() {
+  if (typeof L === 'undefined') {
+    setMapStatus('Error: Leaflet no disponible. Verifica tu conexión a internet.', 'error');
+    return;
+  }
+
+  setMapStatus('Obteniendo tu ubicación…', 'loading');
+
+  if (!navigator.geolocation) {
+    setMapStatus('Tu navegador no soporta geolocalización. Mostrando mapa por defecto.', 'error');
+    loadMapAt(-0.2295, -78.5243, false); // Quito, Ecuador por defecto
+    return;
+  }
+
+  // Usar watchPosition para actualizaciones en tiempo real
+  userWatchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const accuracy = pos.coords.accuracy;
+
+      if (!leafletMap) {
+        // Primera vez: inicializa mapa y busca recicladoras
+        loadMapAt(lat, lng, true, accuracy);
+      } else {
+        // Actualización en tiempo real
+        if (userMarker) {
+          userMarker.setLatLng([lat, lng]);
+        }
+        if (userCircle) {
+          userCircle.setLatLng([lat, lng]);
+          userCircle.setRadius(accuracy > 50 ? accuracy : 50);
+        }
+
+        // Si hay una ruta activa, centrar el mapa al estilo GPS
+        if (currentRouteControl) {
+          leafletMap.setView([lat, lng]);
+        }
+      }
+    },
+    (err) => {
+      if (!leafletMap) {
+        console.warn('Geolocation error:', err);
+        setMapStatus('No se pudo obtener tu ubicación. Mostrando mapa por defecto.', 'error');
+        loadMapAt(-0.2295, -78.5243, false);
+      }
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
+function loadMapAt(lat, lng, hasUserLocation, accuracy = 50) {
+  // Initialize Leaflet map
+  const mapEl = document.getElementById('recycling-map');
+  if (!mapEl) return;
+
+  leafletMap = L.map('recycling-map', {
+    center: [lat, lng],
+    zoom: 14,
+    zoomControl: true,
+  });
+
+  // OpenStreetMap tiles (100% free, no API key)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  }).addTo(leafletMap);
+
+  // User location marker
+  if (hasUserLocation) {
+    const userIcon = L.divIcon({
+      html: `<div style="
+        width:18px;height:18px;border-radius:50%;
+        background:#3b82f6;border:3px solid #fff;
+        box-shadow:0 2px 8px rgba(59,130,246,.6);
+      "></div>`,
+      className: '',
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    });
+    userMarker = L.marker([lat, lng], { icon: userIcon, zIndexOffset: 1000 })
+      .addTo(leafletMap)
+      .bindPopup('<strong>📍 Tu ubicación</strong>')
+      .openPopup();
+
+    // Blue accuracy circle
+    userCircle = L.circle([lat, lng], {
+      radius: accuracy || 50,
+      color: '#3b82f6',
+      fillColor: '#3b82f6',
+      fillOpacity: 0.07,
+      weight: 1.5,
+    }).addTo(leafletMap);
+  }
+
+  setMapStatus('Buscando puntos de reciclaje cercanos…', 'loading');
+  fetchRecyclingPoints(lat, lng);
+}
+
+function fetchRecyclingPoints(lat, lng) {
+  // Overpass API query: radio muy amplio (50km) y añade 'shop=scrap' (chatarreras/recicladoras)
+  const radius = 50000;
+  const query = `
+    [out:json][timeout:25];
+    (
+      node["amenity"="recycling"](around:${radius},${lat},${lng});
+      node["recycling_type"](around:${radius},${lat},${lng});
+      way["amenity"="recycling"](around:${radius},${lat},${lng});
+      node["shop"="scrap"](around:${radius},${lat},${lng});
+      way["shop"="scrap"](around:${radius},${lat},${lng});
+      node["amenity"="waste_disposal"](around:${radius},${lat},${lng});
+    );
+    out center 150;
+  `;
+
+  const url = 'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
+
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      const elements = data.elements || [];
+      if (!elements.length) {
+        setMapStatus(`No se encontraron puntos de reciclaje en ${(radius / 1000).toFixed(0)} km a la redonda.`, 'error');
+        return;
+      }
+
+      const recyclingIcon = L.divIcon({
+        html: `<div style="
+          width:28px;height:28px;border-radius:50%;
+          background:linear-gradient(135deg,#22c55e,#16a34a);
+          border:3px solid #fff;
+          box-shadow:0 2px 10px rgba(34,197,94,.55);
+          display:flex;align-items:center;justify-content:center;
+          font-size:13px;color:#fff;font-weight:700;
+        ">♻</div>`,
+        className: '',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      });
+
+      let addedCount = 0;
+      elements.forEach(el => {
+        const pLat = el.lat || el.center?.lat;
+        const pLng = el.lon || el.center?.lon;
+        if (!pLat || !pLng) return;
+
+        const name = el.tags?.name || el.tags?.operator || 'Punto de reciclaje';
+        const types = Object.keys(el.tags || {})
+          .filter(k => k.startsWith('recycling:') && el.tags[k] === 'yes')
+          .map(k => k.replace('recycling:', ''))
+          .join(', ');
+
+        const popupHtml = `
+          <div style="min-width:180px; padding-bottom:4px;">
+            <strong style="color:#16a34a; font-size:1.05rem;">${name}</strong><br/>
+            ${types ? `<small style="color:#666; display:block; margin:4px 0 10px;">♻️ ${types}</small>` : '<div style="height:10px;"></div>'}
+            <button type="button" onclick="window.drawRoute(${lat}, ${lng}, ${pLat}, ${pLng})"
+               style="display:flex; width:100%; align-items:center; justify-content:center; gap:6px; background:#16a34a; color:#fff; padding:8px 12px; border:none; border-radius:6px; font-weight:bold; font-size:0.9rem; box-shadow:0 2px 4px rgba(22,163,74,0.3); cursor:pointer; transition: background 0.2s;">
+               📍 Cómo llegar aquí
+            </button>
+          </div>
+        `;
+
+        L.marker([pLat, pLng], { icon: recyclingIcon })
+          .addTo(leafletMap)
+          .bindPopup(popupHtml);
+        addedCount++;
+      });
+
+      setMapStatus(
+        `✅ ${addedCount} punto${addedCount !== 1 ? 's' : ''} de reciclaje encontrado${addedCount !== 1 ? 's' : ''} en un radio de ${(radius / 1000).toFixed(0)} km`,
+        'success'
+      );
+    })
+    .catch(err => {
+      console.error('Overpass API error:', err);
+      setMapStatus('Error al buscar puntos de reciclaje. Comprueba tu conexión.', 'error');
+    });
+}
+
+// Map modal events — usando delegación en document para máxima confiabilidad
+document.addEventListener('click', function (e) {
+  // Botón abrir mapa
+  if (e.target && (e.target.id === 'btn-open-map' || e.target.closest('#btn-open-map'))) {
+    e.preventDefault();
+    openMapModal();
+  }
+  // Botón cerrar mapa
+  if (e.target && (e.target.id === 'close-map-modal' || e.target.closest('#close-map-modal'))) {
+    e.preventDefault();
+    closeMapModal();
+  }
+  // Backdrop del mapa
+  if (e.target && e.target.id === 'map-backdrop') {
+    closeMapModal();
+  }
+});
 
 // ── Init categories legend ────────────────────────────────────────────────────
 
@@ -245,7 +526,7 @@ btnClassify.addEventListener('click', () => {
 async function classify(file) {
   // Disable classify button during request
   btnClassify.disabled = true;
-  btnClassify.innerHTML = '<span aria-hidden="true">⏳</span> Procesando…';
+  btnClassify.innerHTML = '<span aria-hidden="true"></span> Procesando…';
 
   hide(resultSection);
   hide(errorBanner);
@@ -355,7 +636,7 @@ function renderHistoryList() {
     });
     const confPct = Math.round((it.confidence || 0) * 100);
     const meta = Object.values(CLASS_META).find(m => m.label === it.label) || null;
-    const emoji = meta ? meta.emoji : '♻️';
+    const emoji = meta ? meta.emoji : '';
     const thumbSrc = it.data_url || '';
     const thumbHtml = thumbSrc
       ? `<img src="${thumbSrc}" alt="${it.label}" loading="lazy"/>`
@@ -463,6 +744,10 @@ function renderResult(data) {
     recoEl.style.display = 'block';
   }
 
+  // Mostrar botón de mapa de reciclaje
+  const mapBtnWrap = document.getElementById('recycle-map-btn-wrap');
+  if (mapBtnWrap) mapBtnWrap.style.display = 'block';
+
   // Arc meter
   const dashOffset = ARC_CIRCUMFERENCE * (1 - final_confidence);
   arcFill.style.strokeDasharray = ARC_CIRCUMFERENCE;
@@ -477,6 +762,45 @@ function renderResult(data) {
 
   // Model comparison rows
   renderModelRows(per_model, mode);
+
+  // Calcular modelo óptimo
+  const optimalMsg = document.getElementById('optimal-model-msg');
+  const optimalText = document.getElementById('optimal-model-text');
+  if (optimalMsg && optimalText) {
+    let bestModel = null;
+    let maxConf = -1;
+
+    // Filtramos los modelos que no fueron saltados
+    const activeModels = per_model.filter(m => m.label !== '—' && m.confidence !== undefined);
+    
+    if (activeModels.length > 0) {
+      if (mode === 'cascade') {
+        // En cascada, el modelo que dio la predicción final (el último que no falló) es el óptimo
+        bestModel = activeModels[activeModels.length - 1];
+      } else {
+        // En ensamble, buscamos el modelo que tenga la mayor confianza para la clase final
+        // (o en general si todos son diferentes, el de mayor confianza global)
+        const modelsMatchingFinal = activeModels.filter(m => m.label === final_label);
+        const candidates = modelsMatchingFinal.length > 0 ? modelsMatchingFinal : activeModels;
+        
+        candidates.forEach(m => {
+          if (m.confidence > maxConf) {
+            maxConf = m.confidence;
+            bestModel = m;
+          }
+        });
+      }
+    }
+
+    if (bestModel) {
+      const display = MODEL_DISPLAY[bestModel.model_id] || { name: bestModel.model_id };
+      const pct = Math.round(bestModel.confidence * 100);
+      optimalText.innerHTML = `El <strong>${display.name}</strong> es el más preciso para esta imagen, clasificándola como <em>${bestModel.label}</em> con un <strong>${pct}%</strong> de confianza.`;
+      optimalMsg.style.display = 'flex';
+    } else {
+      optimalMsg.style.display = 'none';
+    }
+  }
 
   show(resultSection);
   resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
