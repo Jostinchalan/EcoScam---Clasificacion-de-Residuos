@@ -29,4 +29,4 @@ EXPOSE 8000
 
 # ── Start from the backend directory so app.main:app resolves correctly ───────
 WORKDIR /workspace/backend
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD sh -c "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"
