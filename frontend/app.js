@@ -9,7 +9,7 @@
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const API_URL = '/predict';
+const API_URL = 'https://odd-forks-send.loca.lt/predict';
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 
@@ -772,7 +772,7 @@ function renderResult(data) {
 
     // Filtramos los modelos que no fueron saltados
     const activeModels = per_model.filter(m => m.label !== '—' && m.confidence !== undefined);
-    
+
     if (activeModels.length > 0) {
       if (mode === 'cascade') {
         // En cascada, el modelo que dio la predicción final (el último que no falló) es el óptimo
@@ -782,7 +782,7 @@ function renderResult(data) {
         // (o en general si todos son diferentes, el de mayor confianza global)
         const modelsMatchingFinal = activeModels.filter(m => m.label === final_label);
         const candidates = modelsMatchingFinal.length > 0 ? modelsMatchingFinal : activeModels;
-        
+
         candidates.forEach(m => {
           if (m.confidence > maxConf) {
             maxConf = m.confidence;
