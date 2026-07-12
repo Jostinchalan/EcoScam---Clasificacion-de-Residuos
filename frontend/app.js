@@ -148,24 +148,50 @@ window.drawRoute = function (startLat, startLng, endLat, endLng) {
       L.latLng(startLat, startLng),
       L.latLng(endLat, endLng)
     ],
+    router: L.Routing.osrmv1({
+      language: 'es',
+      profile: 'driving'
+    }),
     routeWhileDragging: false,
-    show: true, // MOSTRAR el panel de instrucciones paso a paso
-    collapsible: true, // Permitir colapsarlo
+    show: false, // OCULTAR panel de texto
     addWaypoints: false,
     fitSelectedRoutes: true,
     lineOptions: {
       styles: [{ color: '#3b82f6', opacity: 0.8, weight: 6 }]
     },
-    createMarker: function () { return null; } // No añadir más marcadores
+    createMarker: function () { return null; }
   }).on('routesfound', function (e) {
     const route = e.routes[0];
+    
+    // Configurar estado para asistente de voz
+    window.activeRoute = route;
+    window.activeInstructionIndex = 0;
+    
     const distanceKm = (route.summary.totalDistance / 1000).toFixed(1);
     const timeMin = Math.round(route.summary.totalTime / 60);
     setMapStatus(`📍 Ruta lista: ${distanceKm} km (aprox. ${timeMin} min)`, 'success');
+
+    // Dictar la primera instrucción
+    if (route.instructions && route.instructions.length > 0) {
+      speakText("Ruta calculada. " + route.instructions[0].text);
+      window.activeInstructionIndex = 1;
+    }
+
   }).on('routingerror', function () {
     setMapStatus('Error al calcular la ruta.', 'error');
   }).addTo(leafletMap);
 };
+
+// ── Voice Assistant ─────────────────────────────────────────────────────────
+function speakText(text) {
+  if (!('speechSynthesis' in window)) return;
+  // Limpiar instrucciones muy largas para que suene natural
+  let cleanText = text.replace(/<[^>]*>?/gm, ''); // Quitar posibles etiquetas HTML
+  const msg = new SpeechSynthesisUtterance(cleanText);
+  msg.lang = 'es-ES'; 
+  msg.rate = 1.0;
+  window.speechSynthesis.speak(msg);
+}
 
 function openMapModal() {
   const mapModal = document.getElementById('map-modal');
@@ -234,9 +260,25 @@ function initLeafletMap() {
           userCircle.setRadius(accuracy > 50 ? accuracy : 50);
         }
 
-        // Si hay una ruta activa, centrar el mapa al estilo GPS
+        // Si hay una ruta activa, centrar el mapa al estilo GPS y dictar pasos
         if (currentRouteControl) {
           leafletMap.setView([lat, lng]);
+
+          if (window.activeRoute && window.activeRoute.instructions) {
+            let instructions = window.activeRoute.instructions;
+            if (window.activeInstructionIndex < instructions.length) {
+              let nextInst = instructions[window.activeInstructionIndex];
+              let coord = window.activeRoute.coordinates[nextInst.index];
+              if (coord) {
+                let dist = L.latLng(lat, lng).distanceTo(coord);
+                // Si el usuario está a menos de 40 metros de la instrucción, dictarla
+                if (dist < 40) {
+                  speakText(nextInst.text);
+                  window.activeInstructionIndex++;
+                }
+              }
+            }
+          }
         }
       }
     },
