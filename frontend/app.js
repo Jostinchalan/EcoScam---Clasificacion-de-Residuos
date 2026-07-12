@@ -315,7 +315,8 @@ function fetchRecyclingPoints(lat, lng) {
     out center 150;
   `;
 
-  const url = 'https://lz4.overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
+  const cleanQuery = query.replace(/\s+/g, '');
+  const url = 'https://overpass.kumi.systems/api/interpreter?data=' + encodeURIComponent(cleanQuery);
 
   fetch(url)
     .then(r => r.json())
