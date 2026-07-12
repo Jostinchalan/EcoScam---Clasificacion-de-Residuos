@@ -301,9 +301,9 @@ function loadMapAt(lat, lng, hasUserLocation, accuracy = 50) {
 
 function fetchRecyclingPoints(lat, lng) {
   // Overpass API query: radio muy amplio (50km) y añade 'shop=scrap' (chatarreras/recicladoras)
-  const radius = 15000;
+  const radius = 50000;
   const query = `
-    [out:json][timeout:25];
+    [out:json][timeout:60];
     (
       node["amenity"="recycling"](around:${radius},${lat},${lng});
       node["recycling_type"](around:${radius},${lat},${lng});
