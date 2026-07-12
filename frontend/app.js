@@ -301,7 +301,7 @@ function loadMapAt(lat, lng, hasUserLocation, accuracy = 50) {
 
 function fetchRecyclingPoints(lat, lng) {
   // Overpass API query: radio muy amplio (50km) y añade 'shop=scrap' (chatarreras/recicladoras)
-  const radius = 50000;
+  const radius = 15000;
   const query = `
     [out:json][timeout:25];
     (
@@ -315,9 +315,13 @@ function fetchRecyclingPoints(lat, lng) {
     out center 150;
   `;
 
-  const url = 'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
+  const url = 'https://overpass-api.de/api/interpreter';
 
-  fetch(url)
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'data=' + encodeURIComponent(query)
+  })
     .then(r => r.json())
     .then(data => {
       const elements = data.elements || [];
