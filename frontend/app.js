@@ -553,7 +553,14 @@ async function classify(file) {
   const url = `${API_URL}?mode=${currentMode}`;
 
   try {
-    const resp = await fetch(url, { method: 'POST', body: formData });
+    const resp = await fetch(url, { 
+      method: 'POST', 
+      body: formData,
+      headers: {
+        'Bypass-Tunnel-Reminder': 'true',
+        'ngrok-skip-browser-warning': 'true'
+      }
+    });
 
     clearInterval(stepTimer);
     stepIds.forEach(id => document.getElementById(id).classList.remove('active'));
