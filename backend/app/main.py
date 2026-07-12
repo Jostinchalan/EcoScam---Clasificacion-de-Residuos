@@ -69,9 +69,9 @@ import json
 def get_recycling_points(lat: float, lng: float):
     api_key = "97a737488be312b1566d91673c5fbb05be717f3bbab55927bc598c6593094212"
     url = "https://serpapi.com/search.json?" + urllib.parse.urlencode({
-        "engine": "google_local",
-        "q": "reciclaje OR recicladora OR chatarra",
-        "ll": f"@{lat},{lng},14z",
+        "engine": "google_maps",
+        "q": "reciclaje OR recicladora",
+        "ll": f"@{lat},{lng},12z",
         "hl": "es",
         "api_key": api_key
     })

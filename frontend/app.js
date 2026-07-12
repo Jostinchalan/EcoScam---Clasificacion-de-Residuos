@@ -334,6 +334,8 @@ function fetchRecyclingPoints(lat, lng) {
       });
 
       let addedCount = 0;
+      const markerGroup = L.featureGroup().addTo(leafletMap);
+
       elements.forEach(el => {
         const pLat = el.gps_coordinates?.latitude;
         const pLng = el.gps_coordinates?.longitude;
@@ -354,10 +356,14 @@ function fetchRecyclingPoints(lat, lng) {
         `;
 
         L.marker([pLat, pLng], { icon: recyclingIcon })
-          .addTo(leafletMap)
-          .bindPopup(popupHtml);
+          .bindPopup(popupHtml)
+          .addTo(markerGroup);
         addedCount++;
       });
+
+      if (addedCount > 0) {
+        leafletMap.fitBounds(markerGroup.getBounds().pad(0.1));
+      }
 
       setMapStatus(
         `✅ ${addedCount} punto${addedCount !== 1 ? 's' : ''} de reciclaje encontrado${addedCount !== 1 ? 's' : ''}`,
