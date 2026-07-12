@@ -315,13 +315,9 @@ function fetchRecyclingPoints(lat, lng) {
     out center 150;
   `;
 
-  const url = 'https://overpass-api.de/api/interpreter';
+  const url = 'https://lz4.overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
 
-  fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'data=' + encodeURIComponent(query)
-  })
+  fetch(url)
     .then(r => r.json())
     .then(data => {
       const elements = data.elements || [];
