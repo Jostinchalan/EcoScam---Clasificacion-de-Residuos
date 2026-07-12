@@ -319,7 +319,12 @@ function fetchRecyclingPoints(lat, lng) {
   const url = 'https://overpass.kumi.systems/api/interpreter?data=' + encodeURIComponent(cleanQuery);
 
   fetch(url)
-    .then(r => r.json())
+    .then(r => {
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status}`);
+      }
+      return r.json();
+    })
     .then(data => {
       const elements = data.elements || [];
       if (!elements.length) {
@@ -377,7 +382,7 @@ function fetchRecyclingPoints(lat, lng) {
     })
     .catch(err => {
       console.error('Overpass API error:', err);
-      setMapStatus('Error al buscar puntos de reciclaje. Comprueba tu conexión.', 'error');
+      setMapStatus(`Error al buscar puntos: ${err.message}`, 'error');
     });
 }
 
