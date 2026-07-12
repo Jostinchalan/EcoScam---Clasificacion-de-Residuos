@@ -300,35 +300,22 @@ function loadMapAt(lat, lng, hasUserLocation, accuracy = 50) {
 }
 
 function fetchRecyclingPoints(lat, lng) {
-  // Overpass API query: radio muy amplio (50km) y añade 'shop=scrap' (chatarreras/recicladoras)
-  const radius = 30000;
-  const query = `
-    [out:json][timeout:25];
-    (
-      node["amenity"="recycling"](around:${radius},${lat},${lng});
-      node["recycling_type"](around:${radius},${lat},${lng});
-      way["amenity"="recycling"](around:${radius},${lat},${lng});
-      node["shop"="scrap"](around:${radius},${lat},${lng});
-      way["shop"="scrap"](around:${radius},${lat},${lng});
-      node["amenity"="waste_disposal"](around:${radius},${lat},${lng});
-    );
-    out center 150;
-  `;
+  // Use our backend which proxies to SerpApi
+  let baseUrl = API_URL.replace('/predict', '');
+  if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+  const url = `${baseUrl}/api/recycling?lat=${lat}&lng=${lng}`;
 
-  const cleanQuery = query.replace(/\s+/g, ' ');
-  const url = 'https://overpass.kumi.systems/api/interpreter?data=' + encodeURIComponent(cleanQuery.trim());
-
-  fetch(url)
+  fetch(url, { headers: { 'Bypass-Tunnel-Reminder': 'true', 'ngrok-skip-browser-warning': 'true' } })
     .then(r => {
-      if (!r.ok) {
-        throw new Error(`HTTP ${r.status}`);
-      }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     })
     .then(data => {
-      const elements = data.elements || [];
+      if (data.error) throw new Error(data.error);
+      
+      const elements = data.local_results || [];
       if (!elements.length) {
-        setMapStatus(`No se encontraron puntos de reciclaje en ${(radius / 1000).toFixed(0)} km a la redonda.`, 'error');
+        setMapStatus(`No se encontraron puntos de reciclaje cercanos.`, 'error');
         return;
       }
 
@@ -348,20 +335,17 @@ function fetchRecyclingPoints(lat, lng) {
 
       let addedCount = 0;
       elements.forEach(el => {
-        const pLat = el.lat || el.center?.lat;
-        const pLng = el.lon || el.center?.lon;
+        const pLat = el.gps_coordinates?.latitude;
+        const pLng = el.gps_coordinates?.longitude;
         if (!pLat || !pLng) return;
 
-        const name = el.tags?.name || el.tags?.operator || 'Punto de reciclaje';
-        const types = Object.keys(el.tags || {})
-          .filter(k => k.startsWith('recycling:') && el.tags[k] === 'yes')
-          .map(k => k.replace('recycling:', ''))
-          .join(', ');
+        const name = el.title || 'Punto de reciclaje';
+        const types = el.type || el.address || 'Centro de Reciclaje';
 
         const popupHtml = `
           <div style="min-width:180px; padding-bottom:4px;">
             <strong style="color:#16a34a; font-size:1.05rem;">${name}</strong><br/>
-            ${types ? `<small style="color:#666; display:block; margin:4px 0 10px;">♻️ ${types}</small>` : '<div style="height:10px;"></div>'}
+            <small style="color:#666; display:block; margin:4px 0 10px;">📍 ${types}</small>
             <button type="button" onclick="window.drawRoute(${lat}, ${lng}, ${pLat}, ${pLng})"
                style="display:flex; width:100%; align-items:center; justify-content:center; gap:6px; background:#16a34a; color:#fff; padding:8px 12px; border:none; border-radius:6px; font-weight:bold; font-size:0.9rem; box-shadow:0 2px 4px rgba(22,163,74,0.3); cursor:pointer; transition: background 0.2s;">
                📍 Cómo llegar aquí
@@ -376,7 +360,7 @@ function fetchRecyclingPoints(lat, lng) {
       });
 
       setMapStatus(
-        `✅ ${addedCount} punto${addedCount !== 1 ? 's' : ''} de reciclaje encontrado${addedCount !== 1 ? 's' : ''} en un radio de ${(radius / 1000).toFixed(0)} km`,
+        `✅ ${addedCount} punto${addedCount !== 1 ? 's' : ''} de reciclaje encontrado${addedCount !== 1 ? 's' : ''}`,
         'success'
       );
     })

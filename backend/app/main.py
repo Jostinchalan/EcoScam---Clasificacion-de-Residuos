@@ -59,6 +59,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import urllib.request
+import urllib.parse
+import json
+
+# ── SerpApi Recycling Endpoint ───────────────────────────────────────────────
+
+@app.get("/api/recycling", tags=["map"])
+def get_recycling_points(lat: float, lng: float):
+    api_key = "97a737488be312b1566d91673c5fbb05be717f3bbab55927bc598c6593094212"
+    url = "https://serpapi.com/search.json?" + urllib.parse.urlencode({
+        "engine": "google_local",
+        "q": "reciclaje OR recicladora OR chatarra",
+        "ll": f"@{lat},{lng},14z",
+        "hl": "es",
+        "api_key": api_key
+    })
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            return json.loads(response.read().decode())
+    except Exception as e:
+        return {"error": str(e), "local_results": []}
+
 
 # ── Health check ─────────────────────────────────────────────────────────────
 
